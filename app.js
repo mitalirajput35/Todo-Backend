@@ -7,6 +7,7 @@ const userModel = require("./models/userModel");
 const uid = require("uid");
 const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
+const ejs = require("ejs")
 
 
 
