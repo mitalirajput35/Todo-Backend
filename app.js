@@ -167,8 +167,8 @@ app.delete("/delete/:id", isLoggedin, async (req, res)=>{
     if(!task){
         return res.status(404).json({message: "Task Not Found"})
     }
+    
     // checking task belongs to right user
-
     if(user._id.toString() !== task.user.toString()){
         return res.status(200).json({message: "This Task belongs to another userr"})
     }else{
@@ -189,16 +189,14 @@ app.patch("/update",isLoggedin, async (req, res)=>{
         let user = await userModel.findOne({email: requested_user.email})
         let task = await taskModel.findOne({task_id: task_id})
         
-        
-        
+        //checking if task exists
         if(!task){
             return res.status(404).json({message: "Task Not Found"})
         }
-
+        // checking that updating task belongs to right user
         if(user._id.toString() !== task.user.toString()){
             return res.status(200).json({message: "This Task belongs to another userr"})
         } else {
-
             let updated_task = await taskModel.findOneAndUpdate({task_id: task_id}, req.body, {new: true})
             return res.status(200).json({message: "Task Updated Successfully", updated_task})
         }
