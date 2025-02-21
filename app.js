@@ -9,8 +9,6 @@ const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
 
 
-
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true}));
 app.use(cookieParser())
@@ -27,19 +25,14 @@ app.post("/createUser",  async (req, res)=>{
     }
 
     const existingUser = await userModel.findOne({email: email})
-    console.log(existingUser)
     if(existingUser){
         return res.status(400).json({message: "User already exists"});
     }
     const user = new userModel({username: username, email: email, password: password})
     await user.save();
-    // const user = await userModel.create({
-    //     username,
-    //     email,
-    //     password, 
-    // })
-    console.log(user)
-    let token = jwt.sign({email : email}, process.env.SECRET_KEY, { expiresIn: "1h" })
+
+    console.log(user._id)
+    let token = jwt.sign({email : email, id : user._id}, process.env.SECRET_KEY, { expiresIn: "1h" })
     return res
     .status(200)
     .cookie("token", token)
@@ -77,41 +70,71 @@ app.post("/login", async (req, res)=>{
     //     return res.status(200).json({message: "something went wrong"})
     // }
 })
-app.post("/create", async (req,res)=>{
+app.post("/createTask", isLoggedin,  async (req,res)=>{
+    let user = await userModel.findOne({email: requested_user.email})
+    
     const {task, description, status} = req.body;
-    const allTask = await taskModel.find({});
     let generated_uid = uid.uid(8)
-    let tasks = await taskModel.create({
+
+    let created_task = await taskModel.create({
+        user: user._id,
         task_id: generated_uid,
         title: task,
         description: description,
         status: status,
     })
-    res.status(200).json(tasks)
+
+    user.tasks.push(created_task._id);
+    await user.save();
+
+    console.log("User",user)
+    console.log("tasks",created_task)
+
+    res.status(200).json(created_task)
 })
 
-app.get("/readTask  ", async (req, res)=>{
+app.get("/readTask", isLoggedin ,async (req, res)=>{
     try{
-        let allTask = await taskModel.find({})
-        if(allTask.length == 0){
+        let user = await userModel.findOne({email: requested_user.email}).populate("tasks")
+        if(user.tasks.length == 0){
             return res.status(404).json({message: "No task found"})
         }
-        return res.json(allTask)
+        return res.json(user.tasks)
     }catch(error){
         return res.status(500)
     }
 })
-app.get("/readUser", async (req, res)=>{
+
+//PROVIDES BOTH ALL USERS AND SPECIFIC USER BY EMAIL MATCHING
+app.post("/readUser", isLoggedin ,async (req, res)=>{
     try{
-        let allUser = await userModel.find({})
+        let allUser;
+        if(Object.keys(req.body).length === 0){
+             allUser = await userModel.find({})
+        }else{
+            let {email}= req.body
+             allUser = await userModel.find({ email : email })
+        }
         if(allUser.length == 0){
             return res.status(404).json({message: "No User found"})
         }
         return res.json(allUser)
     }catch(error){
-        return res.status(500)
+        return res.status(500).json({ message: "Server Error" })
     }
 })
+// PROVIDES ALL USERS PRESENT IN THE DB
+// app.get("/readUser", async (req, res)=>{
+//     try{
+//         let allUser = await userModel.find({})
+//         if(allUser.length == 0){
+//             return res.status(404).json({message: "No User found"})
+//         }
+//         return res.json(allUser)
+//     }catch(error){
+//         return res.status(500)
+//     }
+// })
 
 // app.post("/delete", async (req, res)=>{
 //     try {
@@ -134,27 +157,52 @@ app.get("/readUser", async (req, res)=>{
 //     }
 // })
 
-app.delete("/delete/:id", async (req, res)=>{
+app.delete("/delete/:id", isLoggedin, async (req, res)=>{
     const tid = req.params.id;
-    let exist_task = await taskModel.findOneAndDelete({task_id : tid})
-    // let exist_task = await taskModel.findOne({task_id : tid})
-    // console.log(exist_task)
-    if(!exist_task){
+    let user = await userModel.findOne({email: requested_user.email})
+    let task = await taskModel.findOne({task_id : tid})
+    let task_arr = user.tasks
+    // console.log("Before DELETION ",task_arr.length)
+
+    if(!task){
         return res.status(404).json({message: "Task Not Found"})
     }
-    return res.status(200).json({message: "task deleted successfully"})
+    // checking task belongs to right user
+
+    if(user._id.toString() !== task.user.toString()){
+        return res.status(200).json({message: "This Task belongs to another userr"})
+    }else{
+        let index = task_arr.findIndex(id => id.equals(task._id))
+        task_arr.splice(index, 1)
+        await taskModel.findOneAndDelete({task_id : tid})
+        
+        // console.log("After DELETION ",task_arr.length)
+        return res.status(200).json({message: "task deleted successfully", task})
+    }
+   
 })
-app.patch("/update", async (req, res)=>{
+app.patch("/update",isLoggedin, async (req, res)=>{
     try {
+
         console.log(req.body)
         let task_id = req.body.task_id
-        let exist_task = await taskModel.findOneAndUpdate({task_id: task_id}, req.body, {new: true})
-
-        if(!exist_task){
+        let user = await userModel.findOne({email: requested_user.email})
+        let task = await taskModel.findOne({task_id: task_id})
+        
+        
+        
+        if(!task){
             return res.status(404).json({message: "Task Not Found"})
         }
+
+        if(user._id.toString() !== task.user.toString()){
+            return res.status(200).json({message: "This Task belongs to another userr"})
+        } else {
+
+            let updated_task = await taskModel.findOneAndUpdate({task_id: task_id}, req.body, {new: true})
+            return res.status(200).json({message: "Task Updated Successfully", updated_task})
+        }
         
-        return res.status(200).json({message: "Task Updated Successfully", exist_task})
     } catch (error) {
         console.log(error.message)
         return res.status(500).json({message: "Internal Server Error"})
@@ -162,6 +210,15 @@ app.patch("/update", async (req, res)=>{
     }
 })
 
+function isLoggedin(req, res, next){
+    if(!req.cookies.token){
+        return res.status(401).json({ message: "Login in required"})
+    } else {
+        let data = jwt.verify(req.cookies.token, process.env.SECRET_KEY)
+        requested_user = data
+        next();
+    }
+}
 PORT = process.env.PORT
 app.listen(PORT, (err)=>{
     if(err) console.log(err);
